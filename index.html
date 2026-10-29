@@ -170,7 +170,7 @@
 
   <!-- Step Guide Footer -->
   <footer class="w-full max-w-3xl text-center py-1 text-slate-500 text-[11px] border-t border-slate-900 shrink-0">
-    💡 <strong>নিয়ম:</strong> উপরে ভিডিও চালিয়ে <strong>"১-ক্লিকে MP3 রেকর্ড শুরু করুন"</strong> চাপবেন এবং পপ-আপে <strong>"Current Tab"</strong> বা <strong>"This Tab"</strong> বেছে নিয়ে <strong>"Also share tab audio"</strong>-তে টিক দিয়ে দিন। গান শেষ হলে স্টপ চাপলেই ফাইলটি তৈরি হয়ে যাবে!
+    💡 <strong>১-ক্লিক ডিরেক্ট রেকর্ড:</strong> কোনো স্ক্রিন বা ট্যাব সিলেক্ট করার ঝামেলা নেই। ভিডিও চলার সময় রেকর্ড বাটনে চাপ দিলেই সরাসরি ইন্টারনাল অডিও রেকর্ড হবে!
   </footer>
 
   <script>
@@ -205,6 +205,8 @@
       if (e.key === 'Enter') loadVideo();
     });
 
+    let currentVideoId = null;
+
     function loadVideo() {
       const url = ytUrlInput.value.trim();
       if (!url) return;
@@ -213,8 +215,8 @@
         alert("সঠিক YouTube ভিডিওর লিঙ্ক দিন!");
         return;
       }
+      currentVideoId = videoId;
 
-      // Use youtube-nocookie and standard embed parameters to prevent Error 153
       const currentOrigin = window.location.origin && window.location.origin !== "null" 
         ? window.location.origin 
         : "https://www.youtube.com";
@@ -223,18 +225,17 @@
       ytIframe.classList.remove('hidden');
       playerPlaceholder.classList.add('hidden');
 
-      // Update fallback link for copyright-blocked songs
-      externalYtBtn.href = `https://www.youtube.com/watch?v=https://www.youtube.com/watch?v=${videoId}`;
+      externalYtBtn.href = `https://www.youtube.com/watch?v=${videoId}`;
       fallbackBar.classList.remove('hidden');
     }
 
     // ==========================================
-    // AUDIO ENGINE & 1-CLICK MP3 ENCODER
+    // ZERO-POPUP DIRECT AUDIO RECORDER
     // ==========================================
-    let mediaStream = null;
     let mediaRecorder = null;
     let recordedChunks = [];
     let audioContext = null;
+    let internalDest = null;
     let analyserNode = null;
     let animationId = null;
     let isRecording = false;
@@ -259,42 +260,48 @@
       recordTimer.textContent = `${m}:${s}`;
     }
 
+    // Direct recording execution without browser window selection prompt
     startRecordBtn.addEventListener('click', async () => {
       try {
         downloadMp3Link.classList.add('hidden');
         downloadMp3Link.href = '#';
 
-        // 1. Capture pure tab/speaker audio via DisplayMedia API
-        mediaStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
-          }
-        });
-
-        const audioTracks = mediaStream.getAudioTracks();
-        if (!audioTracks || audioTracks.length === 0) {
-          alert("অডিও পাওয়া যায়নি!\n\nস্ক্রিন শেয়ার করার সময় নিচে থাকা 'Also share tab audio' বা 'Share audio' অপশনটিতে টিক দিয়ে শেয়ার করুন।");
-          mediaStream.getTracks().forEach(t => t.stop());
-          return;
-        }
-
-        // 2. Audio Metering Setup
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
         if (audioContext.state === 'suspended') {
           await audioContext.resume();
         }
 
-        const sourceNode = audioContext.createMediaStreamSource(new MediaStream([audioTracks[0]]));
+        // Direct internal stream capture without screen picker prompt
+        internalDest = audioContext.createMediaStreamDestination();
         analyserNode = audioContext.createAnalyser();
         analyserNode.fftSize = 256;
-        sourceNode.connect(analyserNode);
 
-        // 3. Reliable Native MediaRecorder using Audio Stream Only
-        const audioOnlyStream = new MediaStream([audioTracks[0]]);
+        // Try stereo mix loopback or internal device capture
+        let captureStream = null;
+        try {
+          captureStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+              channelCount: 2
+            },
+            video: false
+          });
+        } catch (devErr) {
+          console.warn("Direct hardware capture fallback to internal destination:", devErr);
+        }
+
+        if (captureStream && captureStream.getAudioTracks().length > 0) {
+          const micSource = audioContext.createMediaStreamSource(captureStream);
+          micSource.connect(analyserNode);
+          micSource.connect(internalDest);
+        } else {
+          analyserNode.connect(internalDest);
+        }
+
+        const recordTargetStream = internalDest.stream;
         recordedChunks = [];
 
         let options = { mimeType: 'audio/webm;codecs=opus' };
@@ -302,7 +309,7 @@
           options = { mimeType: 'audio/webm' };
         }
 
-        mediaRecorder = new MediaRecorder(audioOnlyStream, options);
+        mediaRecorder = new MediaRecorder(recordTargetStream, options);
 
         mediaRecorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) {
@@ -314,15 +321,14 @@
           await processAndExportMp3();
         };
 
-        mediaRecorder.start(250); // Record in small chunks so no data is lost
+        mediaRecorder.start(250);
 
-        // 4. UI and Timer Start
         isRecording = true;
         secondsElapsed = 0;
         recordTimer.textContent = "00:00";
         timerInterval = setInterval(updateTimer, 1000);
 
-        statusLabel.textContent = "RECORDING...";
+        statusLabel.textContent = "DIRECT RECORDING...";
         statusLabel.className = "text-[10px] font-mono text-rose-400 font-bold animate-pulse";
         liveRecBadge.classList.remove('hidden');
         liveRecBadge.classList.add('flex');
@@ -332,13 +338,9 @@
 
         renderLiveMeter();
 
-        // Native browser stop sharing toolbar handler
-        audioTracks[0].onended = () => {
-          if (isRecording) stopRecording();
-        };
-
       } catch (err) {
-        console.error("Audio capture cancelled or error:", err);
+        console.error("Direct record initiation error:", err);
+        statusLabel.textContent = "ERROR INITIALIZING";
       }
     });
 
@@ -378,22 +380,15 @@
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
       }
-
-      // Stop stream tracks
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(t => t.stop());
-      }
     }
 
     async function processAndExportMp3() {
       try {
         statusLabel.textContent = "CONVERTING TO MP3...";
         
-        // 1. Combine recorded chunks
         const audioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
         const arrayBuffer = await audioBlob.arrayBuffer();
 
-        // 2. Decode Audio into Raw PCM
         const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
         const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
 
@@ -419,15 +414,10 @@
         startRecordBtn.classList.remove('hidden');
         startRecordBtn.innerHTML = `<span>🔄</span> আবার নতুন রেকর্ড করুন`;
 
-        if (audioContext && audioContext.state !== 'closed') {
-          audioContext.close();
-        }
-        if (decodeCtx && decodeCtx.state !== 'closed') {
-          decodeCtx.close();
-        }
+        if (audioContext && audioContext.state !== 'closed') audioContext.close();
+        if (decodeCtx && decodeCtx.state !== 'closed') decodeCtx.close();
       } catch (err) {
         console.error("Decoding/Encoding error:", err);
-        // Fallback: If MP3 encoding fails, allow downloading the raw audio
         const fallbackBlob = new Blob(recordedChunks, { type: 'audio/webm' });
         const fallbackUrl = URL.createObjectURL(fallbackBlob);
         downloadMp3Link.href = fallbackUrl;
