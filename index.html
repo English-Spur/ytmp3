@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>YouTube Player & 1-Click MP3 Recorder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Client-side Pure MP3 Encoder (lamejs) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.all.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Hind+Siliguri:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Outfit', 'Hind Siliguri', sans-serif;
+      background: radial-gradient(circle at 50% 10%, #17153b 0%, #0b0f19 50%, #030712 100%);
+      user-select: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen text-slate-100 flex flex-col items-center justify-between p-3 md:p-5">
+
+  <!-- Header -->
+  <header class="w-full max-w-3xl flex items-center justify-between pb-3 border-b border-indigo-950/80 shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-rose-500 via-indigo-600 to-cyan-400 flex items-center justify-center text-lg shadow-lg shadow-rose-950/50 font-black">
+        ▶️
+      </div>
+      <div>
+        <h1 class="text-sm md:text-base font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-rose-400 via-amber-200 to-cyan-300">
+          YOUTUBE ➔ 1-CLICK MP3 RECORDER
+        </h1>
+        <p class="text-[10px] text-slate-400">উপরে ভিডিও চলবে এবং নিচে ১-ক্লিকেই সরাসরি MP3 রেকর্ড হবে</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <span id="liveRecBadge" class="hidden items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-[10px] font-mono font-bold text-rose-300 animate-pulse">
+        <span class="w-2 h-2 rounded-full bg-rose-500"></span> REC LIVE
+      </span>
+      <span class="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+        AUTO MP3 EXPORT
+      </span>
+    </div>
+  </header>
+
+  <!-- ALL-IN-ONE WINDOW CONTAINER -->
+  <main class="w-full max-w-3xl flex-1 flex flex-col my-3 gap-3">
+    
+    <!-- TOP SECTION: YouTube Link Input & Integrated Video Screen -->
+    <div class="w-full bg-slate-900/95 border border-slate-800 rounded-3xl p-4 shadow-2xl flex flex-col gap-3">
+      
+      <!-- YouTube Input Bar -->
+      <div class="flex items-center gap-2">
+        <div class="relative flex-1">
+          <input 
+            type="text" 
+            id="ytUrlInput" 
+            placeholder="ইউটিউব ভিডিও লিঙ্ক দিন (যেমন: https://www.youtube.com/watch?v=...)" 
+            class="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+          >
+          <button id="pasteBtn" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-cyan-400 hover:text-cyan-300 font-bold">
+            📋 পেস্ট
+          </button>
+        </div>
+        <button id="loadVideoBtn" class="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:brightness-110 active:scale-95 text-white font-bold text-xs rounded-xl transition shrink-0">
+          ভিডিও চালান
+        </button>
+      </div>
+
+      <!-- Live Video Frame (Top Half) -->
+      <div class="w-full aspect-video bg-slate-950 rounded-2xl overflow-hidden border border-slate-800/90 flex items-center justify-center relative shadow-inner">
+        <div id="playerPlaceholder" class="text-center p-6">
+          <div class="w-14 h-14 mx-auto rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-2xl mb-2 text-slate-500 shadow">
+            📺
+          </div>
+          <p class="text-xs font-semibold text-slate-300">উপরে লিঙ্ক দিয়ে "ভিডিও চালান" বাটনে চাপ দিন</p>
+          <p class="text-[10px] text-slate-500 mt-0.5">ভিডিও চালু হওয়ার পর ঠিক নিচেই এক ক্লিকে MP3 রেকর্ড করুন</p>
+        </div>
+        <iframe 
+          id="ytIframe" 
+          class="w-full h-full absolute inset-0 hidden" 
+          frameborder="0" 
+          referrerpolicy="strict-origin-when-cross-origin"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+          allowfullscreen>
+        </iframe>
+      </div>
+
+      <!-- Fallback bar if video is restricted by copyright -->
+      <div id="fallbackBar" class="hidden flex items-center justify-between bg-slate-950/80 px-3 py-2 rounded-xl border border-amber-900/50 text-xs text-amber-200">
+        <span>⚠️ ভিডিওটি এই পেজে এমবেড ব্লক থাকলে:</span>
+        <a id="externalYtBtn" target="_blank" class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded-lg transition">
+          আলাদা ট্যাবে চালান (রেকর্ডার চালু থাকবে) ↗
+        </a>
+      </div>
+
+    </div>
+
+    <!-- BOTTOM SECTION: ONE-CLICK MP3 RECORDER CONSOLE -->
+    <div class="w-full bg-slate-900/95 border border-slate-800 rounded-3xl p-4 shadow-2xl flex flex-col gap-3">
+      
+      <!-- Control Deck Header -->
+      <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
+          <span class="text-xs font-bold text-slate-200">অডিও রেকর্ড ও MP3 কনভার্টার প্যানেল</span>
+        </div>
+
+        <!-- Bitrate Quality Selector -->
+        <div class="flex items-center gap-1.5 text-xs font-mono">
+          <span class="text-[10px] text-slate-400">QUALITY:</span>
+          <select id="bitrateSelect" class="bg-slate-950 text-amber-300 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] focus:outline-none cursor-pointer">
+            <option value="320">320 kbps (High Studio)</option>
+            <option value="192" selected>192 kbps (Standard)</option>
+            <option value="128">128 kbps (Light)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Meter & Status Row -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-center bg-slate-950 p-3 rounded-2xl border border-slate-800/80">
+        
+        <!-- Timer -->
+        <div class="flex flex-col items-center sm:items-start">
+          <span class="text-[9px] font-mono text-slate-500">RECORD DURATION</span>
+          <div id="recordTimer" class="text-2xl font-mono font-black text-amber-300 leading-none my-1">00:00</div>
+          <span id="statusLabel" class="text-[10px] font-mono text-teal-400">STANDBY</span>
+        </div>
+
+        <!-- Live Audio Waveform Level -->
+        <div class="flex flex-col gap-1 sm:col-span-2">
+          <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+            <span>SOUND WAVE / LEVEL</span>
+            <span id="levelValue">0%</span>
+          </div>
+          <div class="w-full h-3 bg-slate-900 rounded-full overflow-hidden border border-slate-800 p-0.5">
+            <div id="volumeBar" class="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 rounded-full w-0 transition-all duration-75"></div>
+          </div>
+          <span class="text-[9px] text-slate-500">ট্যাবের অডিও স্পিকার থেকে কোনো ইকো বা নয়েজ ছাড়া ক্যাচ করা হবে</span>
+        </div>
+
+      </div>
+
+      <!-- Action Buttons (One-Click Flow) -->
+      <div class="flex flex-col sm:flex-row gap-2 pt-1">
+        
+        <!-- START: One-Click Record -->
+        <button id="startRecordBtn" class="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 hover:brightness-110 active:scale-95 text-white shadow-lg shadow-rose-950/60 transition flex items-center justify-center gap-2 cursor-pointer">
+          <span class="w-2.5 h-2.5 rounded-full bg-white animate-pulse"></span>
+          🔴 ১-ক্লিকে MP3 রেকর্ড শুরু করুন
+        </button>
+
+        <!-- STOP & CONVERT -->
+        <button id="stopRecordBtn" class="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 border border-rose-500/50 text-rose-300 active:scale-95 transition hidden items-center justify-center gap-2 cursor-pointer">
+          <span>⏹</span> রেকর্ড শেষ করুন ও MP3 ফাইল বানান
+        </button>
+
+        <!-- DOWNLOAD MP3 -->
+        <a id="downloadMp3Link" class="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-600 to-teal-500 hover:brightness-110 active:scale-95 text-white shadow-lg shadow-emerald-950/60 transition hidden text-center flex items-center justify-center gap-2 cursor-pointer">
+          <span>📥</span> MP3 ফাইল ডাউনলোড করুন
+        </a>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Step Guide Footer -->
+  <footer class="w-full max-w-3xl text-center py-1 text-slate-500 text-[11px] border-t border-slate-900 shrink-0">
+    💡 <strong>নিয়ম:</strong> উপরে ভিডিও চালিয়ে <strong>"১-ক্লিকে MP3 রেকর্ড শুরু করুন"</strong> চাপবেন এবং পপ-আপে <strong>"Current Tab"</strong> বা <strong>"This Tab"</strong> বেছে নিয়ে <strong>"Also share tab audio"</strong>-তে টিক দিয়ে দিন। গান শেষ হলে স্টপ চাপলেই ফাইলটি তৈরি হয়ে যাবে!
+  </footer>
+
+  <script>
+    // YouTube URL Extractor (Supports standard, shortened and embed URLs)
+    function extractVideoId(url) {
+      const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+      const match = url.match(regExp);
+      return (match && match[2].length === 11) ? match[2] : null;
+    }
+
+    const ytUrlInput = document.getElementById('ytUrlInput');
+    const loadVideoBtn = document.getElementById('loadVideoBtn');
+    const ytIframe = document.getElementById('ytIframe');
+    const playerPlaceholder = document.getElementById('playerPlaceholder');
+    const pasteBtn = document.getElementById('pasteBtn');
+    const fallbackBar = document.getElementById('fallbackBar');
+    const externalYtBtn = document.getElementById('externalYtBtn');
+
+    // Paste from clipboard helper
+    pasteBtn.addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        ytUrlInput.value = text.trim();
+        loadVideo();
+      } catch (err) {
+        ytUrlInput.focus();
+      }
+    });
+
+    loadVideoBtn.addEventListener('click', loadVideo);
+    ytUrlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') loadVideo();
+    });
+
+    function loadVideo() {
+      const url = ytUrlInput.value.trim();
+      if (!url) return;
+      const videoId = extractVideoId(url);
+      if (!videoId) {
+        alert("সঠিক YouTube ভিডিওর লিঙ্ক দিন!");
+        return;
+      }
+
+      // Use youtube-nocookie and standard embed parameters to prevent Error 153
+      const currentOrigin = window.location.origin && window.location.origin !== "null" 
+        ? window.location.origin 
+        : "https://www.youtube.com";
+
+      ytIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(currentOrigin)}`;
+      ytIframe.classList.remove('hidden');
+      playerPlaceholder.classList.add('hidden');
+
+      // Update fallback link for copyright-blocked songs
+      externalYtBtn.href = `https://www.youtube.com/watch?v=https://www.youtube.com/watch?v=${videoId}`;
+      fallbackBar.classList.remove('hidden');
+    }
+
+    // ==========================================
+    // AUDIO ENGINE & 1-CLICK MP3 ENCODER
+    // ==========================================
+    let mediaStream = null;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let audioContext = null;
+    let analyserNode = null;
+    let animationId = null;
+    let isRecording = false;
+
+    let timerInterval = null;
+    let secondsElapsed = 0;
+
+    const startRecordBtn = document.getElementById('startRecordBtn');
+    const stopRecordBtn = document.getElementById('stopRecordBtn');
+    const downloadMp3Link = document.getElementById('downloadMp3Link');
+    const recordTimer = document.getElementById('recordTimer');
+    const statusLabel = document.getElementById('statusLabel');
+    const liveRecBadge = document.getElementById('liveRecBadge');
+    const bitrateSelect = document.getElementById('bitrateSelect');
+    const volumeBar = document.getElementById('volumeBar');
+    const levelValue = document.getElementById('levelValue');
+
+    function updateTimer() {
+      secondsElapsed++;
+      const m = String(Math.floor(secondsElapsed / 60)).padStart(2, '0');
+      const s = String(secondsElapsed % 60).padStart(2, '0');
+      recordTimer.textContent = `${m}:${s}`;
+    }
+
+    startRecordBtn.addEventListener('click', async () => {
+      try {
+        downloadMp3Link.classList.add('hidden');
+        downloadMp3Link.href = '#';
+
+        // 1. Capture pure tab/speaker audio via DisplayMedia API
+        mediaStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+
+        const audioTracks = mediaStream.getAudioTracks();
+        if (!audioTracks || audioTracks.length === 0) {
+          alert("অডিও পাওয়া যায়নি!\n\nস্ক্রিন শেয়ার করার সময় নিচে থাকা 'Also share tab audio' বা 'Share audio' অপশনটিতে টিক দিয়ে শেয়ার করুন।");
+          mediaStream.getTracks().forEach(t => t.stop());
+          return;
+        }
+
+        // 2. Audio Metering Setup
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioCtx();
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+
+        const sourceNode = audioContext.createMediaStreamSource(new MediaStream([audioTracks[0]]));
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 256;
+        sourceNode.connect(analyserNode);
+
+        // 3. Reliable Native MediaRecorder using Audio Stream Only
+        const audioOnlyStream = new MediaStream([audioTracks[0]]);
+        recordedChunks = [];
+
+        let options = { mimeType: 'audio/webm;codecs=opus' };
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          options = { mimeType: 'audio/webm' };
+        }
+
+        mediaRecorder = new MediaRecorder(audioOnlyStream, options);
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            recordedChunks.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          await processAndExportMp3();
+        };
+
+        mediaRecorder.start(250); // Record in small chunks so no data is lost
+
+        // 4. UI and Timer Start
+        isRecording = true;
+        secondsElapsed = 0;
+        recordTimer.textContent = "00:00";
+        timerInterval = setInterval(updateTimer, 1000);
+
+        statusLabel.textContent = "RECORDING...";
+        statusLabel.className = "text-[10px] font-mono text-rose-400 font-bold animate-pulse";
+        liveRecBadge.classList.remove('hidden');
+        liveRecBadge.classList.add('flex');
+
+        startRecordBtn.classList.add('hidden');
+        stopRecordBtn.classList.remove('hidden');
+
+        renderLiveMeter();
+
+        // Native browser stop sharing toolbar handler
+        audioTracks[0].onended = () => {
+          if (isRecording) stopRecording();
+        };
+
+      } catch (err) {
+        console.error("Audio capture cancelled or error:", err);
+      }
+    });
+
+    function renderLiveMeter() {
+      if (!isRecording || !analyserNode) {
+        volumeBar.style.width = '0%';
+        levelValue.textContent = '0%';
+        return;
+      }
+      const data = new Uint8Array(analyserNode.frequencyBinCount);
+      analyserNode.getByteFrequencyData(data);
+
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i];
+      const avg = sum / data.length;
+      const pct = Math.min(100, Math.round((avg / 128) * 100));
+
+      volumeBar.style.width = `${pct}%`;
+      levelValue.textContent = `${pct}%`;
+
+      animationId = requestAnimationFrame(renderLiveMeter);
+    }
+
+    stopRecordBtn.addEventListener('click', stopRecording);
+
+    function stopRecording() {
+      if (!isRecording) return;
+      isRecording = false;
+      clearInterval(timerInterval);
+      if (animationId) cancelAnimationFrame(animationId);
+
+      statusLabel.textContent = "PROCESSING AUDIO...";
+      statusLabel.className = "text-[10px] font-mono text-amber-300 font-bold animate-pulse";
+      liveRecBadge.classList.add('hidden');
+      stopRecordBtn.classList.add('hidden');
+
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+
+      // Stop stream tracks
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+      }
+    }
+
+    async function processAndExportMp3() {
+      try {
+        statusLabel.textContent = "CONVERTING TO MP3...";
+        
+        // 1. Combine recorded chunks
+        const audioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+        const arrayBuffer = await audioBlob.arrayBuffer();
+
+        // 2. Decode Audio into Raw PCM
+        const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+
+        const numChannels = audioBuffer.numberOfChannels;
+        const sRate = audioBuffer.sampleRate;
+        const leftChannel = audioBuffer.getChannelData(0);
+        const rightChannel = numChannels > 1 ? audioBuffer.getChannelData(1) : leftChannel;
+
+        const leftPCM = floatTo16BitPCM(leftChannel);
+        const rightPCM = floatTo16BitPCM(rightChannel);
+
+        const bitrate = parseInt(bitrateSelect.value, 10) || 192;
+        const mp3Blob = encodeToMp3(leftPCM, rightPCM, sRate, bitrate);
+        const mp3Url = URL.createObjectURL(mp3Blob);
+
+        downloadMp3Link.href = mp3Url;
+        downloadMp3Link.download = `youtube_audio_${Date.now()}.mp3`;
+        downloadMp3Link.classList.remove('hidden');
+
+        statusLabel.textContent = "READY FOR DOWNLOAD";
+        statusLabel.className = "text-[10px] font-mono text-emerald-400 font-bold";
+
+        startRecordBtn.classList.remove('hidden');
+        startRecordBtn.innerHTML = `<span>🔄</span> আবার নতুন রেকর্ড করুন`;
+
+        if (audioContext && audioContext.state !== 'closed') {
+          audioContext.close();
+        }
+        if (decodeCtx && decodeCtx.state !== 'closed') {
+          decodeCtx.close();
+        }
+      } catch (err) {
+        console.error("Decoding/Encoding error:", err);
+        // Fallback: If MP3 encoding fails, allow downloading the raw audio
+        const fallbackBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+        const fallbackUrl = URL.createObjectURL(fallbackBlob);
+        downloadMp3Link.href = fallbackUrl;
+        downloadMp3Link.download = `youtube_audio_${Date.now()}.webm`;
+        downloadMp3Link.classList.remove('hidden');
+
+        statusLabel.textContent = "READY (AUDIO SAVED)";
+        statusLabel.className = "text-[10px] font-mono text-emerald-400 font-bold";
+        startRecordBtn.classList.remove('hidden');
+      }
+    }
+
+    function floatTo16BitPCM(input) {
+      const output = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return output;
+    }
+
+    function encodeToMp3(leftPCM, rightPCM, sRate, kbps) {
+      const mp3encoder = new lamejs.Mp3Encoder(2, sRate, kbps);
+      const mp3Data = [];
+      const sampleBlockSize = 1152;
+
+      for (let i = 0; i < leftPCM.length; i += sampleBlockSize) {
+        const leftChunk = leftPCM.subarray(i, i + sampleBlockSize);
+        const rightChunk = rightPCM.subarray(i, i + sampleBlockSize);
+        const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
+        if (mp3buf.length > 0) {
+          mp3Data.push(mp3buf);
+        }
+      }
+
+      const mp3buf = mp3encoder.flush();
+      if (mp3buf.length > 0) {
+        mp3Data.push(mp3buf);
+      }
+
+      return new Blob(mp3Data, { type: 'audio/mp3' });
+    }
+  </script>
+</body>
+</html>
